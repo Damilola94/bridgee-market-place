@@ -6,6 +6,8 @@ import { MarketplaceLayout } from "../../../components/pages/marketplace/Marketp
 import Headphone from "../../../assets/images/headphone.png";
 import Image from "next/image";
 import Loading from "../../../components/common/Loading";
+  import { v4 as uuidv4 } from "uuid";
+
 
 const products = [
   {
@@ -192,7 +194,7 @@ export default function Page() {
         headers: {
           "Content-Type": "application/json",
           "X-Api-Key": API_KEY,
-          "Idempotency-Key": "6x2c0e2a-8v45-4d20-w0f3-2e5c9b71d840",
+          "Idempotency-Key": uuidv4(),
         },
         body: JSON.stringify({
           partnerReference: `ORD-${Date.now()}`,
@@ -252,7 +254,7 @@ setTransaction(normalizeStatusResponse(json.data));
           headers: {
             "Content-Type": "application/json",
             "X-Api-Key": API_KEY,
-            "Idempotency-Key": "6x2c0e2a-8v45-4d20-w0f3-2e5c9b71d840",
+            "Idempotency-Key": uuidv4(),
           },
         },
       );
