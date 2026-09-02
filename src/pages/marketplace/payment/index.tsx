@@ -6,8 +6,7 @@ import { MarketplaceLayout } from "../../../components/pages/marketplace/Marketp
 import Headphone from "../../../assets/images/headphone.png";
 import Image from "next/image";
 import Loading from "../../../components/common/Loading";
-  import { v4 as uuidv4 } from "uuid";
-
+import { v4 as uuidv4 } from "uuid";
 
 const products = [
   {
@@ -27,7 +26,7 @@ const products = [
   {
     name: "Lit Gaming Mouse",
     seller: "TeeGadgets",
-     price: "₦120.00",
+    price: "₦120.00",
     priceValue: 120,
     image: "/mouse.png",
   },
@@ -37,7 +36,7 @@ const API_BASE =
   "https://staging-api.usebridgee.com/escrow-service/api/v1/partner";
 
 const API_KEY =
-  "brg_37ebb0cf7bb5266e8ee13bb6754abcd7cbfaef3df8c9f663edfce38b38bdbf41";
+  "brg_423c899e82dc94a6f31230454e166b8f7a73b58104790fb7c7b8d753c61f7345";
 
 type EscrowStatus =
   | "AwaitingPayment"
@@ -223,14 +222,16 @@ export default function Page() {
         }),
       });
 
-    const json = await res.json();
+      const json = await res.json();
 
-if (!json.isSuccess || !json.data) {
-  setCheckoutError(json.message || "Couldn't create payment. Please try again.");
-  return;
-}
-setLoading(false);
-setTransaction(normalizeStatusResponse(json.data)); 
+      if (!json.isSuccess || !json.data) {
+        setCheckoutError(
+          json.message || "Couldn't create payment. Please try again.",
+        );
+        return;
+      }
+      setLoading(false);
+      setTransaction(normalizeStatusResponse(json.data));
     } catch {
       setCheckoutError("Couldn't reach the payment service. Please try again.");
       setLoading(false);
@@ -254,7 +255,7 @@ setTransaction(normalizeStatusResponse(json.data));
           headers: {
             "Content-Type": "application/json",
             "X-Api-Key": API_KEY,
-            "Idempotency-Key": uuidv4(),
+            "Idempotency-Key": "uuidv4()",
           },
         },
       );
