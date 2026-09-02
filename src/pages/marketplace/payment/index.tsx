@@ -5,57 +5,145 @@ import { Check, Copy, X } from "lucide-react";
 import { MarketplaceLayout } from "../../../components/pages/marketplace/MarketplaceLayout";
 import Headphone from "../../../assets/images/headphone.png";
 import Image from "next/image";
-import { randomUUID } from "crypto";
+import Loading from "../../../components/common/Loading";
 
 const products = [
   {
     name: "Wireless Noise-Cancelling Headphones",
     seller: "TeeGadgets",
-    price: "₦120,000.00",
-    priceValue: 120000,
+    price: "₦120.00",
+    priceValue: 120,
     image: "/headphones.png",
   },
   {
     name: "Bluetooth Speaker",
     seller: "TeeGadgets",
-    price: "₦120,000.00",
-    priceValue: 120000,
+    price: "₦120.00",
+    priceValue: 120,
     image: "/speaker.png",
   },
   {
     name: "Lit Gaming Mouse",
     seller: "TeeGadgets",
-    price: "₦120,000.00",
-    priceValue: 120000,
+     price: "₦120.00",
+    priceValue: 120,
     image: "/mouse.png",
   },
 ];
 
-/**
- * Shape returned by POST /transactions on success (the `data` object from
- * your sample response). Only the fields this page actually renders are
- * typed here — add more as you need them.
- */
+const API_BASE =
+  "https://staging-api.usebridgee.com/escrow-service/api/v1/partner";
+
+const API_KEY =
+  "brg_37ebb0cf7bb5266e8ee13bb6754abcd7cbfaef3df8c9f663edfce38b38bdbf41";
+
+type EscrowStatus =
+  | "AwaitingPayment"
+  | "Confirmed"
+  | "Delivered"
+  | "Completed"
+  | "PayoutFailed"
+  | "Cancelled";
+
+const STATUS_LABELS: Record<EscrowStatus, string> = {
+  AwaitingPayment: "Awaiting Payment",
+  Confirmed: "Confirmed",
+  Delivered: "Delivered",
+  Completed: "Completed",
+  PayoutFailed: "PayoutFailed",
+  Cancelled: "Cancelled",
+};
+
+const STATUS_STYLES: Record<
+  EscrowStatus,
+  { dot: string; text: string; bg: string }
+> = {
+  AwaitingPayment: {
+    dot: "bg-amber-500",
+    text: "text-amber-700",
+    bg: "bg-amber-50",
+  },
+  Confirmed: { dot: "bg-sky-500", text: "text-sky-700", bg: "bg-sky-50" },
+  Delivered: {
+    dot: "bg-indigo-500",
+    text: "text-indigo-700",
+    bg: "bg-indigo-50",
+  },
+  Completed: {
+    dot: "bg-emerald-500",
+    text: "text-emerald-700",
+    bg: "bg-emerald-50",
+  },
+  PayoutFailed: { dot: "bg-rose-400", text: "text-rose-600", bg: "bg-rose-50" },
+  Cancelled: { dot: "bg-rose-400", text: "text-rose-600", bg: "bg-rose-50" },
+};
+
+function StatusPill({ status }: { status: EscrowStatus }) {
+  const style = STATUS_STYLES[status];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${style.bg} ${style.text}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+      {STATUS_LABELS[status]}
+    </span>
+  );
+}
+
 interface EscrowTransaction {
   transactionId: string;
   reference: string;
-  status: string;
+  partnerReference: string;
+  status: EscrowStatus;
   virtualAccount: {
     accountNumber: string;
     accountName: string;
     bankName: string;
-  };
+  } | null;
   totalAmount: number;
   deliveryFee: number;
   escrowFee: number;
   createdAt: string;
 }
 
-interface CreateTransactionResponse {
-  isSuccess: boolean;
-  statusCode: string;
-  message: string;
-  data?: EscrowTransaction;
+function normalizeCreateResponse(raw: any): EscrowTransaction {
+  return {
+    transactionId: raw.TransactionId,
+    reference: raw.Reference,
+    partnerReference: raw.PartnerReference,
+    status: raw.Status,
+    virtualAccount: raw.VirtualAccount
+      ? {
+          accountNumber: raw.VirtualAccount.AccountNumber,
+          accountName: raw.VirtualAccount.AccountName,
+          bankName: raw.VirtualAccount.BankName,
+        }
+      : null,
+    totalAmount: raw.TotalAmount,
+    deliveryFee: raw.DeliveryFee,
+    escrowFee: raw.EscrowFee,
+    createdAt: raw.CreatedAt,
+  };
+}
+
+function normalizeStatusResponse(raw: any): EscrowTransaction {
+  return {
+    transactionId: raw.transactionId,
+    reference: raw.reference,
+    partnerReference: raw.partnerReference,
+    status: raw.status,
+    virtualAccount: raw.virtualAccount
+      ? {
+          accountNumber: raw.virtualAccount.accountNumber,
+          accountName: raw.virtualAccount.accountName,
+          bankName: raw.virtualAccount.bankName,
+        }
+      : null,
+    totalAmount: raw.totalAmount,
+    deliveryFee: raw.deliveryFee,
+    escrowFee: raw.escrowFee,
+    createdAt: raw.createdAt,
+  };
 }
 
 export default function Page() {
@@ -65,8 +153,10 @@ export default function Page() {
     null,
   );
   const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const total = items.reduce((sum, item) => sum + item.priceValue, 0);
 
   const copyValue = async (value: string, key: string) => {
@@ -96,70 +186,100 @@ export default function Page() {
     setIsCreatingTransaction(true);
 
     try {
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/transactions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-Key": API_KEY,
+          "Idempotency-Key": "6x2c0e2a-8v45-4d20-w0f3-2e5c9b71d840",
+        },
+        body: JSON.stringify({
+          partnerReference: `ORD-${Date.now()}`,
+          buyer: {
+            externalId: "b_88",
+            name: "Toluwalase",
+            email: "toluwalase@example.com",
+            phone: "08030000001",
+          },
+          seller: {
+            externalId: "s_12",
+            name: "TeeGadgets",
+            email: "vendor@teegadgets.example.com",
+            phone: "08030000002",
+            bankCode: "035",
+            accountNumber: "0123456789",
+          },
+          items: items.map((item) => ({
+            name: item.name,
+            quantity: 1,
+            unitPrice: item.priceValue,
+          })),
+          deliveryFee: 0,
+          description: `Wishlist checkout (${items.length} item${items.length === 1 ? "" : "s"})`,
+          metadata: { channel: "web" },
+        }),
+      });
+
+    const json = await res.json();
+
+if (!json.isSuccess || !json.data) {
+  setCheckoutError(json.message || "Couldn't create payment. Please try again.");
+  return;
+}
+setLoading(false);
+setTransaction(normalizeStatusResponse(json.data)); 
+    } catch {
+      setCheckoutError("Couldn't reach the payment service. Please try again.");
+      setLoading(false);
+    } finally {
+      setIsCreatingTransaction(false);
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmSent = async () => {
+    if (!transaction) return;
+
+    setCheckoutError(null);
+    setIsCheckingStatus(true);
+
+    try {
+      setLoading(true);
       const res = await fetch(
-        "https://staging-api.usebridgee.com/escrow-service/api/v1/partner/transactions",
+        `${API_BASE}/transactions/${transaction.transactionId}`,
         {
-          method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Api-Key": "brg_37ebb0cf7bb5266e8ee13bb6754abcd7cbfaef3df8c9f663edfce38b38bdbf41",
-            "Idempotency-Key": "6f1c0e2a-9op8-4d19-a0f3-2e5c9b71d840",
+            "X-Api-Key": API_KEY,
+            "Idempotency-Key": "6x2c0e2a-8v45-4d20-w0f3-2e5c9b71d840",
           },
-          body: JSON.stringify({
-            partnerReference: `ORD-${Date.now()}`,
-            // TODO: replace with the actual signed-in buyer's details once
-            // this page has access to a real session/user object — "Toluwalase"
-            // is only ever shown as a display greeting right now, nothing in
-            // this UI currently captures a buyer email/phone/externalId.
-            buyer: {
-              externalId: "b_88",
-              name: "Toluwalase",
-              email: "toluwalase@example.com",
-              phone: "08030000001",
-            },
-            // TODO: replace with the real seller/vendor record for these
-            // items (bank code + account number for payout) once the
-            // marketplace has actual vendor accounts — every demo product
-            // here shares the single "TeeGadgets" seller as a placeholder.
-            seller: {
-              externalId: "s_12",
-              name: "TeeGadgets",
-              email: "vendor@teegadgets.example.com",
-              phone: "08030000002",
-              bankCode: "035",
-              accountNumber: "0123456789",
-            },
-            items: items.map((item) => ({
-              name: item.name,
-              quantity: 1,
-              unitPrice: item.priceValue,
-            })),
-            deliveryFee: 0,
-            description: `Wishlist checkout (${items.length} item${items.length === 1 ? "" : "s"})`,
-            metadata: { channel: "web" },
-          }),
         },
       );
 
-      const json: CreateTransactionResponse = await res.json();
+      const json = await res.json();
 
-      if (!res.ok || !json.isSuccess || !json.data) {
+      if (!json.isSuccess || !json.data) {
         setCheckoutError(
-          json.message || "Couldn't start checkout. Please try again.",
+          json.message || "Couldn't check payment status. Please try again.",
         );
         return;
       }
-
-      setTransaction(json.data);
+      setLoading(false);
+      setTransaction(normalizeStatusResponse(json.data));
     } catch {
+      setLoading(false);
       setCheckoutError("Couldn't reach the payment service. Please try again.");
     } finally {
-      setIsCreatingTransaction(false);
+      setIsCheckingStatus(false);
+      setLoading(false);
     }
   };
 
   return (
     <MarketplaceLayout wishlistCount={wishlist.length}>
+      {loading && <Loading />}
+
       <main className="min-h-screen bg-[#f7f8fa] p-4 text-[#20202a] md:p-6">
         <div className="mx-auto max-w-[1450px]">
           <p className="mb-4 text-[13px] text-[#777781]">
@@ -217,7 +337,10 @@ export default function Page() {
             {transaction ? (
               <PaymentDetails
                 transaction={transaction}
+                isCheckingStatus={isCheckingStatus}
+                checkoutError={checkoutError}
                 onCancel={() => setTransaction(null)}
+                onConfirmSent={handleConfirmSent}
                 copied={copied}
                 onCopy={copyValue}
               />
@@ -284,12 +407,18 @@ export default function Page() {
 
 function PaymentDetails({
   transaction,
+  isCheckingStatus,
+  checkoutError,
   onCancel,
+  onConfirmSent,
   copied,
   onCopy,
 }: {
   transaction: EscrowTransaction;
+  isCheckingStatus: boolean;
+  checkoutError: string | null;
   onCancel: () => void;
+  onConfirmSent: () => void;
   copied: string | null;
   onCopy: (value: string, key: string) => void;
 }) {
@@ -309,8 +438,9 @@ function PaymentDetails({
   const seconds = secondsLeft % 60;
   const countdown = `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
-  const { virtualAccount, totalAmount } = transaction;
+  const { virtualAccount, totalAmount, status } = transaction;
   const amountLabel = `₦${totalAmount.toLocaleString("en-NG")}.00`;
+  const isAwaitingPayment = status === "AwaitingPayment";
 
   return (
     <section className="w-full rounded-2xl bg-white p-6 shadow-[0_5px_16px_rgba(31,35,45,0.08)] sm:p-8 xl:w-[450px]">
@@ -323,61 +453,106 @@ function PaymentDetails({
           </p>
         </div>
 
-        <span className="text-2xl font-medium">Pay</span>
+        <StatusPill status={status} />
       </div>
 
-      <h2 className="mt-5 text-base font-semibold">
-        Transfer NGN to the Collection Account Below
-      </h2>
+      {isAwaitingPayment && virtualAccount ? (
+        <>
+          <h2 className="mt-5 text-base font-semibold">
+            Transfer NGN to the Collection Account Below
+          </h2>
 
-      <div className="mt-6 space-y-8 rounded-2xl bg-[#f5f5f5] p-7 text-base text-[#687080]">
-        <p>{virtualAccount.bankName}</p>
+          <div className="mt-6 space-y-8 rounded-2xl bg-[#f5f5f5] p-7 text-base text-[#687080]">
+            <p>{virtualAccount.bankName}</p>
 
-        <div>
-          <p>ACCOUNT NAME</p>
-          <p>{virtualAccount.accountName}</p>
-        </div>
+            <div>
+              <p>ACCOUNT NAME</p>
+              <p>{virtualAccount.accountName}</p>
+            </div>
 
-        <CopyRow
-          label="ACCOUNT NUMBER"
-          value={virtualAccount.accountNumber}
-          copied={copied === "account"}
-          onCopy={() => onCopy(virtualAccount.accountNumber, "account")}
-        />
+            <CopyRow
+              label="ACCOUNT NUMBER"
+              value={virtualAccount.accountNumber}
+              copied={copied === "account"}
+              onCopy={() => onCopy(virtualAccount.accountNumber, "account")}
+            />
 
-        <CopyRow
-          label="AMOUNT"
-          value={amountLabel}
-          copied={copied === "amount"}
-          onCopy={() => onCopy(amountLabel, "amount")}
-        />
-      </div>
+            <CopyRow
+              label="AMOUNT"
+              value={amountLabel}
+              copied={copied === "amount"}
+              onCopy={() => onCopy(amountLabel, "amount")}
+            />
+          </div>
 
-      <div className="my-10 border-t border-dashed border-[#8b8f98]" />
+          <div className="my-10 border-t border-dashed border-[#8b8f98]" />
 
-      <p className="text-center text-base leading-relaxed">
-        The account is for this transaction only and expires in
-        <br />
-        <strong className="text-2xl font-medium text-[#00aa7d]">
-          {countdown}
-        </strong>
-      </p>
+          <p className="text-center text-base leading-relaxed">
+            The account is for this transaction only and expires in
+            <br />
+            <strong className="text-2xl font-medium text-[#00aa7d]">
+              {countdown}
+            </strong>
+          </p>
 
-      <button
-        className="mt-10 h-14 w-full rounded-xl bg-[#b5096e] text-lg font-bold text-white hover:bg-[#99085e]"
-        type="button"
-      >
-        I&apos;ve sent the money
-      </button>
+          {checkoutError && (
+            <p className="mt-4 text-center text-sm font-semibold text-red-600">
+              {checkoutError}
+            </p>
+          )}
 
-      <button
-        onClick={onCancel}
-        type="button"
-        className="mt-4 flex h-14 w-full items-center justify-center gap-3 rounded-xl border-2 border-[#737b89] text-lg font-medium"
-      >
-        <X size={24} strokeWidth={1.5} />
-        Cancel Payment
-      </button>
+          <button
+            onClick={onConfirmSent}
+            disabled={isCheckingStatus}
+            className="cursor-pointer mt-10 h-14 w-full rounded-xl bg-[#b5096e] text-lg font-bold text-white hover:bg-[#99085e] disabled:opacity-60"
+            type="button"
+          >
+            {isCheckingStatus ? "Checking payment..." : "I've sent the money"}
+          </button>
+
+          <button
+            onClick={onCancel}
+            type="button"
+            className="mt-4 flex h-14 w-full items-center cursor-pointer justify-center gap-3 rounded-xl border-2 border-[#737b89] text-lg font-medium"
+          >
+            <X size={24} strokeWidth={1.5} />
+            Cancel Payment
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="mt-6 rounded-2xl bg-[#f5f5f5] p-7 text-center">
+            <p className="text-base font-semibold text-[#20202a]">
+              {status === "Confirmed" &&
+                "Payment confirmed — your order is being processed."}
+              {status === "Delivered" &&
+                "Your order has been marked as delivered."}
+              {status === "Completed" && "This transaction is complete."}
+              {status === "PayoutFailed" &&
+                "Payout to the seller failed — support has been notified."}
+              {status === "Cancelled" && "This transaction was cancelled."}
+            </p>
+            <p className="mt-2 text-sm text-[#687080]">
+              Reference: {transaction.reference}
+            </p>
+          </div>
+
+          {checkoutError && (
+            <p className="mt-4 text-center text-sm font-semibold text-red-600">
+              {checkoutError}
+            </p>
+          )}
+
+          <button
+            onClick={onCancel}
+            type="button"
+            className="mt-6 flex h-14 w-full items-center cursor-pointer justify-center gap-3 rounded-xl border-2 border-[#737b89] text-lg font-medium"
+          >
+            <X size={24} strokeWidth={1.5} />
+            Close
+          </button>
+        </>
+      )}
     </section>
   );
 }
