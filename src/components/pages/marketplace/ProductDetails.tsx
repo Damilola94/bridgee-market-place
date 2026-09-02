@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import {
-  ArrowLeft,
   ChevronRight,
   Heart,
   Minus,
@@ -46,7 +45,6 @@ export function ProductDetails({
 
   return (
     <div className="bg-[#F7F8FA] px-6 py-8 md:px-10">
-      {/* Breadcrumb */}
       <div className="mb-6 flex items-center gap-2 text-sm">
         <button
           type="button"
@@ -69,10 +67,8 @@ export function ProductDetails({
         </span>
       </div>
 
-      {/* Product Card */}
       <div className="rounded-2xl bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.06)] md:p-6">
         <div className="grid items-center gap-7 lg:grid-cols-[1.05fr_1fr]">
-          {/* Product Image */}
           <div className="relative aspect-[16/8.5] w-full overflow-hidden rounded-xl bg-neutral-100">
             <Image
               src={Headphone}
@@ -83,9 +79,7 @@ export function ProductDetails({
             />
           </div>
 
-          {/* Product Information */}
           <div className="flex flex-col">
-            {/* Vendor */}
             <button
               type="button"
               className="mb-4 flex w-fit items-center gap-1.5 text-sm font-medium text-pink-700"
@@ -104,17 +98,14 @@ export function ProductDetails({
               {product.name}
             </h1>
 
-            {/* Description */}
             <p className="mt-4 max-w-2xl text-xs leading-6 text-neutral-500 md:text-[13px]">
               {product.fullDescription || product.description}
             </p>
 
-            {/* Price */}
             <p className="mt-5 text-xl font-bold text-pink-800 md:text-2xl">
               {formatNaira(product.price)}
             </p>
 
-            {/* Actions */}
             <div className="mt-5 flex items-center gap-3">
               {/* Buy Now */}
               <button
@@ -125,7 +116,6 @@ export function ProductDetails({
                 Buy Now
               </button>
 
-              {/* Quantity */}
               <div className="flex h-10 items-center overflow-hidden rounded-md border border-neutral-300 bg-white">
                 <button
                   type="button"
@@ -152,7 +142,6 @@ export function ProductDetails({
                 </button>
               </div>
 
-              {/* Wishlist */}
               <button
                 type="button"
                 onClick={onToggleWishlist}

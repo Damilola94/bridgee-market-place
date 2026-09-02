@@ -5,34 +5,69 @@ import { Check, Copy, X } from "lucide-react";
 import { MarketplaceLayout } from "../../../components/pages/marketplace/MarketplaceLayout";
 import Headphone from "../../../assets/images/headphone.png";
 import Image from "next/image";
+import { randomUUID } from "crypto";
 
 const products = [
   {
     name: "Wireless Noise-Cancelling Headphones",
     seller: "TeeGadgets",
     price: "₦120,000.00",
+    priceValue: 120000,
     image: "/headphones.png",
   },
   {
     name: "Bluetooth Speaker",
     seller: "TeeGadgets",
     price: "₦120,000.00",
+    priceValue: 120000,
     image: "/speaker.png",
   },
   {
     name: "Lit Gaming Mouse",
     seller: "TeeGadgets",
     price: "₦120,000.00",
+    priceValue: 120000,
     image: "/mouse.png",
   },
 ];
 
+/**
+ * Shape returned by POST /transactions on success (the `data` object from
+ * your sample response). Only the fields this page actually renders are
+ * typed here — add more as you need them.
+ */
+interface EscrowTransaction {
+  transactionId: string;
+  reference: string;
+  status: string;
+  virtualAccount: {
+    accountNumber: string;
+    accountName: string;
+    bankName: string;
+  };
+  totalAmount: number;
+  deliveryFee: number;
+  escrowFee: number;
+  createdAt: string;
+}
+
+interface CreateTransactionResponse {
+  isSuccess: boolean;
+  statusCode: string;
+  message: string;
+  data?: EscrowTransaction;
+}
+
 export default function Page() {
   const [items, setItems] = useState(products);
   const [payment, setPayment] = useState("escrow");
-  const [checkoutStarted, setCheckoutStarted] = useState(false);
+  const [transaction, setTransaction] = useState<EscrowTransaction | null>(
+    null,
+  );
+  const [isCreatingTransaction, setIsCreatingTransaction] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const total = items.length * 120000;
+  const total = items.reduce((sum, item) => sum + item.priceValue, 0);
 
   const copyValue = async (value: string, key: string) => {
     await navigator.clipboard.writeText(value);
@@ -53,6 +88,75 @@ export default function Page() {
       setWishlist([]);
     }
   }, []);
+
+  const handleProceedToCheckout = async () => {
+    if (payment !== "escrow" || !items.length) return;
+
+    setCheckoutError(null);
+    setIsCreatingTransaction(true);
+
+    try {
+      const res = await fetch(
+        "https://staging-api.usebridgee.com/escrow-service/api/v1/partner/transactions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": "brg_37ebb0cf7bb5266e8ee13bb6754abcd7cbfaef3df8c9f663edfce38b38bdbf41",
+            "Idempotency-Key": "6f1c0e2a-9op8-4d19-a0f3-2e5c9b71d840",
+          },
+          body: JSON.stringify({
+            partnerReference: `ORD-${Date.now()}`,
+            // TODO: replace with the actual signed-in buyer's details once
+            // this page has access to a real session/user object — "Toluwalase"
+            // is only ever shown as a display greeting right now, nothing in
+            // this UI currently captures a buyer email/phone/externalId.
+            buyer: {
+              externalId: "b_88",
+              name: "Toluwalase",
+              email: "toluwalase@example.com",
+              phone: "08030000001",
+            },
+            // TODO: replace with the real seller/vendor record for these
+            // items (bank code + account number for payout) once the
+            // marketplace has actual vendor accounts — every demo product
+            // here shares the single "TeeGadgets" seller as a placeholder.
+            seller: {
+              externalId: "s_12",
+              name: "TeeGadgets",
+              email: "vendor@teegadgets.example.com",
+              phone: "08030000002",
+              bankCode: "035",
+              accountNumber: "0123456789",
+            },
+            items: items.map((item) => ({
+              name: item.name,
+              quantity: 1,
+              unitPrice: item.priceValue,
+            })),
+            deliveryFee: 0,
+            description: `Wishlist checkout (${items.length} item${items.length === 1 ? "" : "s"})`,
+            metadata: { channel: "web" },
+          }),
+        },
+      );
+
+      const json: CreateTransactionResponse = await res.json();
+
+      if (!res.ok || !json.isSuccess || !json.data) {
+        setCheckoutError(
+          json.message || "Couldn't start checkout. Please try again.",
+        );
+        return;
+      }
+
+      setTransaction(json.data);
+    } catch {
+      setCheckoutError("Couldn't reach the payment service. Please try again.");
+    } finally {
+      setIsCreatingTransaction(false);
+    }
+  };
 
   return (
     <MarketplaceLayout wishlistCount={wishlist.length}>
@@ -110,10 +214,10 @@ export default function Page() {
               ))}
             </div>
 
-            {checkoutStarted ? (
+            {transaction ? (
               <PaymentDetails
-                total={total}
-                onCancel={() => setCheckoutStarted(false)}
+                transaction={transaction}
+                onCancel={() => setTransaction(null)}
                 copied={copied}
                 onCopy={copyValue}
               />
@@ -153,12 +257,21 @@ export default function Page() {
                     description="Pay with an added layer of security, easy and seamless."
                   />
                 </div>
+
+                {checkoutError && (
+                  <p className="mt-3 text-[11px] font-semibold text-red-600">
+                    {checkoutError}
+                  </p>
+                )}
+
                 <button
-                  onClick={() => setCheckoutStarted(true)}
+                  onClick={handleProceedToCheckout}
                   className="mt-5 h-9 w-full rounded-md bg-[#b5096e] text-[13px] font-bold text-white transition hover:bg-[#99085e] disabled:opacity-50"
-                  disabled={!items.length}
+                  disabled={!items.length || isCreatingTransaction}
                 >
-                  Proceed to Checkout
+                  {isCreatingTransaction
+                    ? "Setting up payment..."
+                    : "Proceed to Checkout"}
                 </button>
               </aside>
             )}
@@ -168,13 +281,14 @@ export default function Page() {
     </MarketplaceLayout>
   );
 }
+
 function PaymentDetails({
-  total,
+  transaction,
   onCancel,
   copied,
   onCopy,
 }: {
-  total: number;
+  transaction: EscrowTransaction;
   onCancel: () => void;
   copied: string | null;
   onCopy: (value: string, key: string) => void;
@@ -195,13 +309,16 @@ function PaymentDetails({
   const seconds = secondsLeft % 60;
   const countdown = `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
+  const { virtualAccount, totalAmount } = transaction;
+  const amountLabel = `₦${totalAmount.toLocaleString("en-NG")}.00`;
+
   return (
     <section className="w-full rounded-2xl bg-white p-6 shadow-[0_5px_16px_rgba(31,35,45,0.08)] sm:p-8 xl:w-[450px]">
       <div className="flex items-start justify-between border-b border-[#8b8f98] pb-6">
         <div>
           <h2 className="text-base font-medium">Damilola Ogunboyejo</h2>
-          <p className="mt-5 text-xl text-[#687080]">09034057632</p>
-          <p className="mt-4 text-base text-[#687080]">
+          <p className="text-base text-[#687080]">09034057632</p>
+          <p className=" text-base text-[#687080]">
             demilademichael18@gmail.com
           </p>
         </div>
@@ -209,32 +326,30 @@ function PaymentDetails({
         <span className="text-2xl font-medium">Pay</span>
       </div>
 
-      <h2 className="mt-10 text-base font-semibold">
+      <h2 className="mt-5 text-base font-semibold">
         Transfer NGN to the Collection Account Below
       </h2>
 
       <div className="mt-6 space-y-8 rounded-2xl bg-[#f5f5f5] p-7 text-base text-[#687080]">
-        <p>BANK NAME</p>
+        <p>{virtualAccount.bankName}</p>
 
         <div>
           <p>ACCOUNT NAME</p>
-          <p>Damilola Ogunboyejo</p>
+          <p>{virtualAccount.accountName}</p>
         </div>
 
         <CopyRow
           label="ACCOUNT NUMBER"
-          value="0123456789"
+          value={virtualAccount.accountNumber}
           copied={copied === "account"}
-          onCopy={() => onCopy("0123456789", "account")}
+          onCopy={() => onCopy(virtualAccount.accountNumber, "account")}
         />
 
         <CopyRow
           label="AMOUNT"
-          value={`₦${total.toLocaleString("en-NG")}.00`}
+          value={amountLabel}
           copied={copied === "amount"}
-          onCopy={() =>
-            onCopy(`₦${total.toLocaleString("en-NG")}.00`, "amount")
-          }
+          onCopy={() => onCopy(amountLabel, "amount")}
         />
       </div>
 
@@ -243,7 +358,6 @@ function PaymentDetails({
       <p className="text-center text-base leading-relaxed">
         The account is for this transaction only and expires in
         <br />
-
         <strong className="text-2xl font-medium text-[#00aa7d]">
           {countdown}
         </strong>
@@ -282,7 +396,6 @@ function CopyRow({
   return (
     <div className="flex items-center justify-between">
       <div>
-        {" "}
         <span>{label}</span>
         <p>{value}</p>
       </div>
@@ -291,7 +404,7 @@ function CopyRow({
         onClick={onCopy}
         className="text-[#20202a]"
       >
-        {copied ? <Check size={28} /> : <Copy size={28} strokeWidth={1.6} />}
+        {copied ? <Check size={16} /> : <Copy size={16} strokeWidth={1.6} />}
       </button>
     </div>
   );
