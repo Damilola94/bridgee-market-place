@@ -36,7 +36,7 @@ const API_BASE =
   "https://staging-api.usebridgee.com/escrow-service/api/v1/partner";
 
 const API_KEY =
-  "brg_423c899e82dc94a6f31230454e166b8f7a73b58104790fb7c7b8d753c61f7345";
+  "brg_31c612497b2d39c1d7c6338471f4deae8935d08658151c53033121d562ea1a46";
 
 type EscrowStatus =
   | "AwaitingPayment"
