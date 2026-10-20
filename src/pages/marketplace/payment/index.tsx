@@ -36,7 +36,7 @@ const API_BASE =
   "https://staging-api.usebridgee.com/escrow-service/api/v1/partner";
 
 const API_KEY =
-  "brg_31c612497b2d39c1d7c6338471f4deae8935d08658151c53033121d562ea1a46";
+  "brg_defc5c7a52167cb0f3ac88c4d68600bd1cb451da946214d58f7e7117458c0339";
 
 type EscrowStatus =
   | "AwaitingPayment"
@@ -217,6 +217,7 @@ export default function Page() {
             unitPrice: item.priceValue,
           })),
           deliveryFee: 0,
+          feeAmount: 0,
           description: `Wishlist checkout (${items.length} item${items.length === 1 ? "" : "s"})`,
           metadata: { channel: "web" },
         }),
