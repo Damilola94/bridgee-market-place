@@ -217,7 +217,7 @@ export default function Page() {
             unitPrice: item.priceValue,
           })),
           deliveryFee: 0,
-          feeAmount: 0,
+          feeAmount: 10,
           description: `Wishlist checkout (${items.length} item${items.length === 1 ? "" : "s"})`,
           metadata: { channel: "web" },
         }),
